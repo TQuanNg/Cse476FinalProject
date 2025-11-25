@@ -6,6 +6,28 @@ class InferenceTechnique:
         self.max_calls = 20
         self.inference_technique = inference_technique
 
+    def _call(self, prompt: str, temperature: float = 0.0, system: str | None = None) -> str:
+        if self.call_counter >= self.max_calls:
+            return "ERROR: max call limit reached"
+        self.call_counter += 1
+        resp = call_model_chat_completions(
+            prompt,
+            system=system or "You are a helpful assistant. Reply with only the final answer—no explanation.",
+            temperature=temperature,
+        )
+        if not resp.get("ok"):
+            return f"ERROR status={resp.get('status')} {resp.get('error')}"
+        return (resp.get("text") or "").strip()
+
+    def chain_of_thought(self, question: str) -> str:
+        cot = self._call(
+            f"Think step-by-step and then provide the final concise answer.\nQUESTION: {question}\nRespond as: Final Answer: <answer>",
+            temperature=0.7,
+        )
+        if "Final Answer:" in cot:
+            return cot.split("Final Answer:")[-1].strip()
+        return cot.strip()
+
     # First technique: Self-Refinement
     def self_refinement(self, question):
         answer = self._call(
@@ -16,16 +38,16 @@ class InferenceTechnique:
             critique = self._call(
                 f"You are a strict reviewer. Analyze the answer below and list any mistakes, "
                 f"missing reasoning, incorrect logic, or unclear explanation.\n\n"
-                f"QUESTION: {question}\n\n"
-                f"ANSWER: {answer}\n\n"
+                f"QUESTION: {question}\n"
+                f"ANSWER: {answer}\n"
                 f"Respond with a short critique."
             )
 
             refined = self._call(
                 f"Improve the answer using the critique below. Fix any errors, clarify reasoning, "
                 f"and produce the best possible final answer.\n\n"
-                f"QUESTION: {question}\n\n"
-                f"CRITIQUE: {critique}\n\n"
+                f"QUESTION: {question}\n"
+                f"CRITIQUE: {critique}\n"
                 f"Give ONLY the improved final answer."
             )
 
