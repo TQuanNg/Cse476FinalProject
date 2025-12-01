@@ -10,10 +10,7 @@ def call_model_chat_completions(prompt: str,
                                 model: str = MODEL,
                                 temperature: float = 0.0,
                                 timeout: int = 60) -> dict:
-    """
-    Calls an OpenAI-style /v1/chat/completions endpoint and returns:
-    { 'ok': bool, 'text': str or None, 'raw': dict or None, 'status': int, 'error': str or None, 'headers': dict }
-    """
+
     url = f"{API_BASE}/chat/completions"
     headers = {
         "Authorization": f"Bearer {API_KEY}",
@@ -26,7 +23,7 @@ def call_model_chat_completions(prompt: str,
             {"role": "user",   "content": prompt}
         ],
         "temperature": temperature,
-        "max_tokens": 128,
+        "max_tokens": 900,
     }
 
     try:
@@ -38,7 +35,6 @@ def call_model_chat_completions(prompt: str,
             text = data.get("choices", [{}])[0].get("message", {}).get("content", "")
             return {"ok": True, "text": text, "raw": data, "status": status, "error": None, "headers": hdrs}
         else:
-            # try best-effort to surface error text
             err_text = None
             try:
                 err_text = resp.json()
@@ -48,7 +44,6 @@ def call_model_chat_completions(prompt: str,
     except requests.RequestException as e:
         return {"ok": False, "text": None, "raw": None, "status": -1, "error": str(e), "headers": {}}
 
-# %% Define three tests: input + expected
 tests = [
     {
         "id": "math_inequality",
@@ -78,7 +73,6 @@ tests = [
 ]
 
 
-# %% Simple normalization and evaluation helpers
 def normalize_text(s: str) -> str:
     s = (s or "").strip().lower()
     # Remove surrounding punctuation and extra whitespace
@@ -144,7 +138,6 @@ def evaluate_tests(tests, model=MODEL):
             print("   error:", x["error"])
     return rows
 
-results = evaluate_tests(tests)
 
 
 def self_evaluate(question, prediction, expected_answer, model=MODEL):
@@ -192,21 +185,6 @@ Answer with exactly: True or False
 
 
 def self_evaluate_tests(tests, model=MODEL, grader_model=None, sleep_sec=0.2, verbose=True):
-    """
-    Run the tests by querying the model for each prompt, then use LLM-as-a-judge
-    (self_evaluate) to determine correctness.
-
-    Args:
-        tests: list of dicts with keys: id, prompt, expected (and optionally type)
-        model: model used to generate predictions
-        grader_model: model used to judge correctness (defaults to `model` if None)
-        sleep_sec: small delay between calls to be polite to the API
-        verbose: if True, print a summary line per test
-
-    Returns:
-        rows: list of dicts with fields:
-              id, expected, got, correct, status, error
-    """
     import time
 
     judge_model = grader_model or model
@@ -251,6 +229,84 @@ def self_evaluate_tests(tests, model=MODEL, grader_model=None, sleep_sec=0.2, ve
 
     return rows
 
-# Example:
-results_llm_judge = self_evaluate_tests(tests, verbose=True, model=MODEL, grader_model=MODEL)
+
+def evaluate_tests_with_agent(tests, agent):
+    import time
+
+    rows = []
+    for t in tests:
+        # Reset the agent's call counter for each question
+        agent.technique.call_counter = 0
+
+        # Use agent to solve
+        got = agent.solve_and_answer(t["prompt"])
+
+        # Grade the answer
+        is_correct = grade(t["expected"], got, t["type"])
+
+        rows.append({
+            "id": t["id"],
+            "expected": t["expected"],
+            "got": got,
+            "correct": is_correct,
+            "status": 200,
+            "error": None,
+        })
+
+        # Tiny pacing to be polite to the API
+        time.sleep(0.2)
+
+    # Print a small report
+    correct = sum(1 for x in rows if x["correct"])
+    print(f"Score: {correct}/{len(rows)} correct")
+    for x in rows:
+        mark = "✅" if x["correct"] else "❌"
+        print(f"{mark} {x['id']}: expected={x['expected']!r}, got={x['got']!r}")
+        if x.get("error"):
+            print("   error:", x["error"])
+    return rows
+
+
+def self_evaluate_tests_with_agent(tests, agent, grader_model=None, sleep_sec=0.2, verbose=True):
+    import time
+
+    judge_model = grader_model or MODEL
+    rows = []
+
+    for t in tests:
+        # Reset the agent's call counter for each question
+        agent.technique.call_counter = 0
+
+        # 1) Get agent prediction
+        got = agent.solve_and_answer(t["prompt"])
+
+        # 2) LLM-as-a-judge: strict True/False
+        is_correct = self_evaluate(
+            question=t["prompt"],
+            prediction=got,
+            expected_answer=t["expected"],
+            model=judge_model,
+        )
+
+        row = {
+            "id": t.get("id", "<unnamed>"),
+            "expected": t["expected"],
+            "got": got,
+            "correct": bool(is_correct),
+            "status": 200,
+            "error": None,
+        }
+        rows.append(row)
+
+        if verbose:
+            mark = "[OK ✅]" if is_correct else "[FAIL ❌]"
+            print(f"{mark} {row['id']}: expected={row['expected']!r}, got={row['got']!r}")
+            if row.get("error"):
+                print("   error:", row["error"])
+
+        if sleep_sec:
+            time.sleep(sleep_sec)
+
+    return rows
+
 

@@ -1,5 +1,5 @@
 import json
-from utils import call_model_chat_completions, evaluate_tests, self_evaluate_tests, tests, MODEL
+from utils import call_model_chat_completions, tests, MODEL, evaluate_tests_with_agent, self_evaluate_tests_with_agent
 from agent import WorkingAgent
 
 def load_data(file_path):
@@ -25,11 +25,12 @@ def run_api_tests():
     print("OK:", result["ok"], "HTTP:", result["status"])
     print("MODEL SAYS:", (result["text"] or "").strip())
 
-    print("\n=== Running evaluation tests ===")
-    evaluate_tests(tests)
+    # Create agent instance for testing
+    agent = WorkingAgent()
 
-    print("\n=== Running LLM-judge tests ===")
-    self_evaluate_tests(tests, verbose=True, model=MODEL)
+
+    print("\n=== Running LLM-judge tests with Agent ===")
+    self_evaluate_tests_with_agent(tests, agent, verbose=True, grader_model=MODEL)
 
 def main():
     print("=== Creating Agent ===")
