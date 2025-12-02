@@ -90,6 +90,41 @@ class InferenceTechnique:
 
         return final_answer
 
+    def future_consistency(self, question, samples=4):
+        predictions = []
+
+        for _ in range(samples):
+            response = self._call(
+                f"""
+                    {question}
+
+                    IMPORTANT:
+                    Your final answer MUST end with this exact format:
+                    \\boxed{{YOUR_PREDICTION}}
+                    Do not add anything else.
+                    """,
+                temperature=0.8
+            )
+
+            answer = response.strip()
+            if "\\boxed{" in answer:
+                answer = answer[answer.find("\\boxed{"):]  # remove extra text
+                answer = answer.splitlines()[0].strip()  # first line only
+
+            predictions.append(answer)
+
+        print("[Future-Prediction Probabilities] Raw predictions:", predictions)
+
+        # Count frequencies
+        from collections import Counter
+        count = Counter(predictions)
+        most_common = count.most_common(1)[0][0]
+        confidence = count[most_common] / len(predictions)
+
+        print(f"[Future-Prediction Probabilities] Selected = {most_common} (confidence={confidence:.2f})")
+
+        return most_common
+
     def self_refinement_coding(self, question):
 
         answer = self.chain_of_thought(question)
