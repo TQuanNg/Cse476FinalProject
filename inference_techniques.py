@@ -125,6 +125,62 @@ class InferenceTechnique:
 
         return most_common
 
+    # Used for commonsense
+    def react(self, question):
+        thought = self._call(
+            f"You are an agent using the ReAct pattern.\n"
+            f"THOUGHT: Think step-by-step about the question.\n"
+            f"Do NOT answer yet.\n"
+            f"QUESTION: {question}\n"
+            f"Respond with only your chain-of-thought as THOUGHT: ..."
+        )
+
+        action = self._call(
+            f"Based on the THOUGHT:\n{thought}\n\n"
+            f"Proceed to perform an ACTION to help answer the question and retrieve all RELEVANT contexts TO that question.\n"
+            f"Action should be done in many subjects in the question."
+            f" Recommended amount of action is 2, maximum amount of action is 4\n"
+            f"Some examples of ACTIONS you can take are: Search[query], Calculate[equation], Lookup[topic].\n"
+        )
+
+        print(f"[React] thought: {thought}\n")
+        print(f"[React] action: {action}\n")
+
+        observation = self._call(
+            f"Based on context from {action}.\n"
+            f"for answering the QUESTION: {question}\n"
+            f"Perform those ACTIONS."
+            f"Then perform any observations or calculations needed. Avoid false facts.\n"
+            f"If direct action does not give enough info to answer, then a logical deduction must be done.\n"
+            f"Do NOT give final answer yet.\n"
+        )
+
+        final = self._call(
+            f"QUESTION: {question}\n"
+            f"THOUGHT: {thought}\n"
+            f"ACTION: {action}\n"
+            f"OBSERVATION: {observation}\n"
+            f"Now give ONLY a brief final answer."
+            f"No need for a full sentence answer."
+            f"If it is a name, give full name."
+            f"Do not include chain-of-thought or steps."
+        )
+
+        confirm_final = self._call(
+            f"Given question: {question}\n"
+            f"And your final answer: {final}."
+            f"Based on the previous THOUGHT: {thought}, ACTION: {action}, and OBSERVATION: {observation}, "
+            f" If it is unknown, you MUST give your most likely answer based on context around THOUGHT and {observation}."
+        )
+
+        print(f"[React] observation: {observation}\n")
+
+        print(f"[React] answer: {final}\n")
+
+        print("Confirmation of final answer:", confirm_final, "\n")
+
+        return final
+
     def self_refinement_coding(self, question):
 
         answer = self.chain_of_thought(question)
