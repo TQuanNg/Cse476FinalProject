@@ -1,4 +1,7 @@
+from typing import Optional, Tuple
+
 from utils import call_model_chat_completions
+import re
 
 class InferenceTechnique:
     def __init__(self, inference_technique):
@@ -6,116 +9,182 @@ class InferenceTechnique:
         self.max_calls = 20
         self.inference_technique = inference_technique
 
-    def _call(self, prompt: str, temperature: float = 0.0, system: str | None = None) -> str:
+    def _call(self, prompt: str, temperature: float = 0.0, token: int = 800, system: str | None = None) -> str:
         if self.call_counter >= self.max_calls:
             return "ERROR: max call limit reached"
         self.call_counter += 1
         resp = call_model_chat_completions(
             prompt,
-            system=system or "You are a helpful assistant. Reply with only the final answer—no explanation.",
+            system=system or "You are a helpful assistant.",
             temperature=temperature,
         )
         if not resp.get("ok"):
             return f"ERROR status={resp.get('status')} {resp.get('error')}"
         return (resp.get("text") or "").strip()
 
-    def chain_of_thought(self, question: str) -> str:
-        cot = self._call(
-            f"Think step-by-step and then provide the final concise answer.\nQUESTION: {question}\nRespond as: Final Answer: <answer>",
-            temperature=0.7,
+    def classify_question(self, question):
+        """
+        Returns: 'math', 'commonsense', 'future_prediction', or 'planning'
+        """
+        prompt = f"""
+            Classify the following question into ONE category:
+            - math (requires calculation, equations, numbers, mathematical reasoning)
+            - commonsense (real-world knowledge, everyday reasoning, general facts)
+            - future_prediction (asking about what will happen, forecasting, predictions)
+            - coding (requires programming, code generation, debugging)
+            - planning (requires step-by-step planning, strategy, multi-step processes)
+        
+            QUESTION:
+            {question}
+        
+            Return ONLY one word, NO EXTRA CHARACTER: math, commonsense, future_prediction, coding, or planning.
+            """
+
+        result = self._call(
+            prompt,
+            system="Return only one label: math, commonsense, future_prediction, coding, or planning.",
+            temperature=0.0,
         )
-        if "Final Answer:" in cot:
-            return cot.split("Final Answer:")[-1].strip()
-        return cot.strip()
 
-    # First technique: Self-Refinement
-    def self_refinement(self, question):
-        answer = self._call(
-            f"Answer the question clearly and concisely.\n\nQUESTION: {question}"
-        )
-
-        for _ in range(2):
-            critique = self._call(
-                f"You are a strict reviewer. Analyze the answer below and list any mistakes, "
-                f"missing reasoning, incorrect logic, or unclear explanation.\n\n"
-                f"QUESTION: {question}\n"
-                f"ANSWER: {answer}\n"
-                f"Respond with a short critique."
-            )
-
-            refined = self._call(
-                f"Improve the answer using the critique below. Fix any errors, clarify reasoning, "
-                f"and produce the best possible final answer.\n\n"
-                f"QUESTION: {question}\n"
-                f"CRITIQUE: {critique}\n"
-                f"Give ONLY the improved final answer."
-            )
-
-
-            # If the refinement produced something new, update answer
-            if refined and refined.strip() != answer.strip():
-                answer = refined
-
-        return answer
-
+        return (result or "").strip().lower()
 
     # Second technique: Self consistency
     #
-    def self_consistency(self, question, samples=3):
-        chain_of_thought_answers = []
+    def self_consistency(self, question, samples=4):
+        answers = []
 
-        # Generate many chains of thought with answers
-        for _ in range(4):
-            chain_of_thought = self._call(
-                f"Solve step-by-step, but end with: 'Final Answer: <answer>'.\n\n"
-                f"QUESTION: {question}",
-                temperature=1.0
+        for i in range(samples):
+            response = self._call(
+                f"""
+                    {question}
+
+                    Solve carefully.
+                    End your response with:
+                    Final Answer: <your answer>
+                    """,
+                temperature=0.8
             )
 
-            final = None
-            if "Final Answer:" in chain_of_thought:
-                final = chain_of_thought.split("Final Answer:")[-1].strip()
+            # Extract answer
+            if "Final Answer:" in response:
+                ans = response.split("Final Answer:")[-1].strip()
+                ans = ans.split("\n")[0].strip()
             else:
-                final = chain_of_thought.strip() # if failed
+                # fallback if model forgets format
+                extract = self._call(
+                    f"Extract ONLY the final answer from this:\n\n{response}",
+                    system="Return only the answer.",
+                    temperature=0.0
+                )
+                ans = extract.strip()
 
-            chain_of_thought_answers.append(final) # get all answers
+            answers.append(ans)
 
-        final_answer = max(set(chain_of_thought_answers), key=chain_of_thought_answers.count)
+        print("[Self-Consistency] Answers:", answers)
+
+        # Majority vote
+        final_answer = max(set(answers), key=answers.count)
+        confidence = answers.count(final_answer) / len(answers)
+
+        print(f"[Self-Consistency] Final = {final_answer} (confidence={confidence:.2f})")
 
         return final_answer
 
-    # Third technique: ReAct
-    #
-    def react(self, question):
-        thought = self._call(
-            f"You are an agent using the ReAct pattern.\n"
-            f"THOUGHT: Think step-by-step about the question.\n"
-            f"Do NOT answer yet.\n"
-            f"QUESTION: {question}\n"
-            f"Respond with only your chain-of-thought as THOUGHT: ..."
-        )
-        action = self._call(
-            f"Based on the THOUGHT:\n{thought}\n\n"
-            f"Choose an ACTION.\n"
-            f"Examples: SEARCH, LOOKUP, CALCULATE, CHECK_FACT, NO_ACTION.\n"
-            f"Reply in a JSON-like format: ACTION: <action>"
-        )
-        observation = self._call(
-            f"You decided on ACTION: {action}.\n"
-            f"Simulate the OBSERVATION (result of the action).\n"
-            f"Do NOT give final answer yet.\n"
-            f"Reply starting with OBSERVATION: ..."
-        )
+    def self_refinement_coding(self, question):
 
-        final = self._call(
-            f"QUESTION: {question}\n"
-            f"THOUGHT: {thought}\n"
-            f"ACTION: {action}\n"
-            f"OBSERVATION: {observation}\n"
-            f"Now give ONLY the final answer.\n"
-            f"Do not include chain-of-thought or steps."
-        )
+        answer = self.chain_of_thought(question)
+        print(f"[Self-Refinement] Initial Answer:\n{answer}\n")
 
-        return final
+        for i in range(2):
+            verifier_prompt = f"""
+        You are a strict code reviewer.
 
-    # Alternative technique: Chain of Thought
+        TASK:
+        Check if the following code fully satisfies the specification.
+
+        QUESTION:
+        {question}
+
+        CODE:
+        {answer}
+
+        OUTPUT FORMAT (STRICT — ONE LINE ONLY):
+
+        - If correct, output EXACTLY:
+        VALID
+
+        - If incorrect, output EXACTLY ONE LINE in this form:
+        FIX: <short actionable correction instruction>
+
+        Example:
+        FIX: You forgot to return plt.gca()
+        FIX: Salary must be random.randint(*SALARY_RANGE)
+
+        NO explanation. NO bullets. ONE line only.
+        """
+            critique = self._call(verifier_prompt, temperature=0.0)
+            print(f"[Self-Refinement] Iteration {i + 1} - Critique:\n{critique}\n")
+
+            # Stop if correct
+            if critique.strip().upper() == "VALID":
+                print(f"[Self-Refinement] Code VALID at iteration {i + 1}.\n")
+                break
+
+            # ---- PATCHER ----
+            patch_prompt = f"""
+        You are in CORRECTION MODE.
+
+        QUESTION:
+        {question}
+
+        CURRENT CODE:
+        {answer}
+
+        CRITIQUE:
+        {critique}
+
+        INSTRUCTIONS:
+        - Apply ONLY the fix described in the critique.
+        - Do NOT rewrite the entire solution.
+        - Do NOT change working logic.
+        - Preserve the exact function signature.
+        - Output ONLY corrected Python code.
+        """
+            refined = self._call(patch_prompt, temperature=0.0)
+            print(f"[Self-Refinement] Iteration {i + 1} - Refined Code:\n{refined}\n")
+
+            # ---- SAFETY UPDATE ----
+            if refined.strip():
+                answer = refined.strip()
+            else:
+                print("[Self-Refinement] Empty patch received — aborting.\n")
+                break
+
+        print(f"[Self-Refinement] Final Code Used:\n{answer}\n")
+        return answer
+
+    # alternative method
+    def chain_of_thought(self, question: str) -> str:
+        """
+        Initial code generator for coding tasks only.
+        """
+        prompt = f"""
+    You are a professional Python developer.
+
+    TASK:
+    Generate a correct and minimal code solution for the following problem.
+
+    OUTPUT RULES (MANDATORY):
+    - Output ONLY Python code.
+    - Include all required imports and constants.
+    - Define the function exactly as requested.
+    - Do NOT explain.
+    - Do NOT include markdown.
+    - Ensure the function returns the correct object.
+    - Follow instructions literally (title, labels, return type, etc).
+
+    QUESTION:
+    {question}
+    """
+        code = self._call(prompt, temperature=0.25)
+        return code.strip()
