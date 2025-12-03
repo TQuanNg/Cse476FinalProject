@@ -22,9 +22,6 @@ class InferenceTechnique:
         return (resp.get("text") or "").strip()
 
     def classify_question(self, question):
-        """
-        Returns: 'math', 'commonsense', 'future_prediction', or 'planning'
-        """
         prompt = f"""
             Classify the following question into ONE category:
             - math (requires calculation, equations, numbers, mathematical reasoning)
@@ -309,6 +306,29 @@ class InferenceTechnique:
 
         print(f"[Solver] Final Answer used: {final_answer}\n")
         return final_answer
+
+    def solve_expression_question(self, question: str) -> str:
+
+        prompt = f"""
+            You are a professional mathematician. Solve the following problem STEP BY STEP by forming a valid mathematical expression.
+            You must follow the output format EXACTLY.
+
+            QUESTION:
+            {question}
+
+            RULES:
+            - Output format must be EXACTLY as requested.
+            - Do NOT explain.
+            - Do NOT add steps.
+            - Do NOT add commentary.
+            - If format says `Solution: <expression>`, follow it exactly.
+            - Ensure the expression equals the required value.
+
+            FINAL OUTPUT:
+            """
+
+        answer = self._call(prompt, temperature=0.0).strip()
+        return answer
 
     # Refining CoT for better answer
     def self_refinement_coding(self, question):
