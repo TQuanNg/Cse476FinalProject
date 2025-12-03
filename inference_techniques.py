@@ -181,8 +181,51 @@ class InferenceTechnique:
 
         return final
 
-    def self_refinement_coding(self, question):
+    # First technique for solving math problem: chain of thought
+    # Output is step by step solution
+    def chain_of_thought_math(self, question: str) -> str:
+        prompt = f"""
+            You are a professional mathematician. Be concise and strictly symbolic.
+        
+            OUTPUT FORMAT (MANDATORY):
+            Step 1: <short equation or statement>
+            Step 2: <short equation or statement>
+            ...
+            Final Answer: <number>
+        
+            RULES:
+            - Define variables before first use.
+            - Use only short lines (one equation or one small derivation per step).
+            - Do NOT include paragraphs or storytelling.
+            - Do NOT assume special shapes/angles/symmetry unless provable from data.
+            - If a claim cannot be proven from the problem data, state: "Step X: CANNOT_PROVE: <brief reason>".
+            - Use minimal language to save tokens.
+        
+            QUESTION:
+            {question}
+        
+            Remember: Output must follow the exact format above.
+        """
+        # Lower temperature for deterministic math outputs
+        cot = self._call(prompt, temperature=0.2)
 
+        # If model failed to follow format, try to salvage by forcing minimal cleanup
+        if "Step 1:" not in cot and "Final Answer:" in cot:
+            # wrap the whole thing into a single step to allow patching,
+            cot = "Step 1: " + cot.replace("\n", " ") + "\nFinal Answer: " + (
+                re.search(r"Final Answer:\s*(.*)", cot, re.IGNORECASE).group(1).strip()
+                if re.search(r"Final Answer:\s*(.*)", cot, re.IGNORECASE)
+                else ""
+            )
+        return cot.strip()
+
+    # Based on chain_of_thought_math, iteratively refine until solved
+    def solve_math_question(self, question, max_iters: int = 2):
+        full_solution = self.chain_of_thought_math(question)
+        print(f"[Solver] Initial output:\n{full_solution}\n")
+
+
+    def self_refinement_coding(self, question):
         answer = self.chain_of_thought(question)
         print(f"[Self-Refinement] Initial Answer:\n{answer}\n")
 
@@ -260,22 +303,22 @@ class InferenceTechnique:
         Initial code generator for coding tasks only.
         """
         prompt = f"""
-    You are a professional Python developer.
-
-    TASK:
-    Generate a correct and minimal code solution for the following problem.
-
-    OUTPUT RULES (MANDATORY):
-    - Output ONLY Python code.
-    - Include all required imports and constants.
-    - Define the function exactly as requested.
-    - Do NOT explain.
-    - Do NOT include markdown.
-    - Ensure the function returns the correct object.
-    - Follow instructions literally (title, labels, return type, etc).
-
-    QUESTION:
-    {question}
-    """
+            You are a professional Python developer.
+        
+            TASK:
+            Generate a correct and minimal code solution for the following problem.
+        
+            OUTPUT RULES (MANDATORY):
+            - Output ONLY Python code.
+            - Include all required imports and constants.
+            - Define the function exactly as requested.
+            - Do NOT explain.
+            - Do NOT include markdown.
+            - Ensure the function returns the correct object.
+            - Follow instructions literally (title, labels, return type, etc).
+        
+            QUESTION:
+            {question}
+            """
         code = self._call(prompt, temperature=0.25)
         return code.strip()
