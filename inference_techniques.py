@@ -1,6 +1,7 @@
 from utils import call_model_chat_completions
 import re
 
+
 class InferenceTechnique:
     def __init__(self, inference_technique):
         self.call_counter = 0
@@ -31,13 +32,13 @@ class InferenceTechnique:
             - future_prediction (asking about what will happen, forecasting, predictions)
             - coding (requires programming, code generation, debugging)
             - planning (requires step-by-step planning, strategy, multi-step processes)
-        
+
             QUESTION:
             {question}
-        
+
             DO NOT ANSWER THE QUESTION, ONLY CLASSIFY IT.
             Return ONLY one word, NO EXTRA CHARACTER: math, commonsense, future_prediction, coding, or planning.
-            
+
             """
 
         result = self._call(
@@ -72,7 +73,13 @@ class InferenceTechnique:
             else:
                 # fallback if model forgets format
                 extract = self._call(
-                    f"Extract ONLY the final answer from this:\n\n{response}",
+
+                    f"""
+                    You must output ONLY ONE LINE:
+                    Final Answer: <number>
+
+                    Extract ONLY the final answer from this:\n\n{response}
+                    """,
                     system="Return only the answer.",
                     temperature=0.0
                 )
@@ -80,13 +87,13 @@ class InferenceTechnique:
 
             answers.append(ans)
 
-        #print("[Self-Consistency] Answers:", answers)
+        # print("[Self-Consistency] Answers:", answers)
 
         # Majority vote
         final_answer = max(set(answers), key=answers.count)
         confidence = answers.count(final_answer) / len(answers)
 
-        #print(f"[Self-Consistency] Final = {final_answer} (confidence={confidence:.2f})")
+        # print(f"[Self-Consistency] Final = {final_answer} (confidence={confidence:.2f})")
 
         return final_answer
 
@@ -143,8 +150,8 @@ class InferenceTechnique:
             f"Some examples of ACTIONS you can take are: Search[query], Calculate[equation], Lookup[topic].\n"
         )
 
-        #print(f"[React] thought: {thought}\n")
-        #print(f"[React] action: {action}\n")
+        # print(f"[React] thought: {thought}\n")
+        # print(f"[React] action: {action}\n")
 
         observation = self._call(
             f"Based on context from {action}.\n"
@@ -166,8 +173,8 @@ class InferenceTechnique:
             f"Do not include chain-of-thought or steps."
         )
 
-        #print(f"[React] observation: {observation}\n")
-        #print(f"[React] answer: {final}\n")
+        # print(f"[React] observation: {observation}\n")
+        # print(f"[React] answer: {final}\n")
 
         return final
 
@@ -176,13 +183,13 @@ class InferenceTechnique:
     def chain_of_thought_math(self, question: str) -> str:
         prompt = f"""
             You are a professional mathematician. Be concise and strictly symbolic.
-        
+
             OUTPUT FORMAT (MANDATORY):
             Step 1: <short equation or statement>
             Step 2: <short equation or statement>
             ...
             Final Answer: <number>
-        
+
             RULES:
             - Define variables before first use.
             - Use only short lines (one equation or one small derivation per step).
@@ -190,10 +197,10 @@ class InferenceTechnique:
             - Do NOT assume special shapes/angles/symmetry unless provable from data.
             - If a claim cannot be proven from the problem data, state: "Step X: CANNOT_PROVE: <brief reason>".
             - Use minimal language to save tokens.
-        
+
             QUESTION:
             {question}
-        
+
             Remember: Output must follow the exact format above.
         """
         # Lower temperature for deterministic math outputs
@@ -227,7 +234,7 @@ class InferenceTechnique:
                 RULES:
                 - Do NOT repeat any step.
                 - Continue numbering exactly.
-                - Remember to follow the OUTPUT FORMAT strictly:
+                - Remember to follow the OUTPUT FORMAT strictly.
                   Final Answer: <number>
 
                 QUESTION:
@@ -248,13 +255,60 @@ class InferenceTechnique:
                 print(f"[Solver] Completed at iteration {i + 1} ✔\n")
                 break
 
+        if "Final Answer:" not in full_solution:
+            print("[Solver] No Final Answer detected. Forcing final extraction...")
+
+            force_prompt = f"""
+            You must output ONLY ONE LINE:
+            Final Answer: <result>
+
+            Using the partial work below.
+
+            PARTIAL SOLUTION:
+            {full_solution}
+
+            RULES:
+            - Do NOT explain.
+            - Do NOT repeat steps.
+            - Output EXACTLY:
+              Final Answer: <result>
+            """
+
+            forced = self._call(force_prompt, temperature=0.0)
+            print(f"[Solver] Forced Final Output:\n{forced}\n")
+
+            full_solution = full_solution.rstrip() + "\n" + forced.strip()
+
         # Get final answer
-        m_ans = re.search(r"Final Answer\s*:\s*(.+)", full_solution, re.IGNORECASE)
+        m_ans = re.search(
+            r"Final Answer\s*:\s*\**\s*(?:\n+)?([^\n]+)",
+            full_solution,
+            re.IGNORECASE
+        )
         final_answer = m_ans.group(1).strip() if m_ans else ""
+
+        extract_prompt = f"""
+        You are a number extraction tool.
+
+        Return ONLY the answer from the text below.
+
+        RULES:
+        - Output ONLY the number or short text.
+        - If the answer includes units, remove them.
+        - If multiple numbers appear, return the FINAL answer only.
+        - Do NOT explain.
+        - Do NOT repeat the text.
+
+        TEXT:
+        {final_answer}
+
+        ANSWER:
+        """
+
+        final_answer = self._call(extract_prompt, temperature=0.0).strip()
 
         print(f"[Solver] Final Answer used: {final_answer}\n")
         return final_answer
-
 
     # Refining CoT for better answer
     def self_refinement_coding(self, question):
@@ -333,10 +387,10 @@ class InferenceTechnique:
     def chain_of_thought_coding(self, question: str) -> str:
         prompt = f"""
             You are a professional Python developer.
-        
+
             TASK:
             Generate a correct and minimal code solution for the following problem.
-        
+
             OUTPUT RULES (MANDATORY):
             - Output ONLY Python code.
             - Include all required imports and constants.
@@ -345,7 +399,7 @@ class InferenceTechnique:
             - Do NOT include markdown.
             - Ensure the function returns the correct object.
             - Follow instructions literally (title, labels, return type, etc).
-        
+
             QUESTION:
             {question}
             """
