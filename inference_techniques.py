@@ -214,6 +214,47 @@ class InferenceTechnique:
         full_solution = self.chain_of_thought_math(question)
         print(f"[Solver] Initial output:\n{full_solution}\n")
 
+        for i in range(max_iters):
+
+            # If already solved, stop immediately
+            if "Final Answer:" in full_solution:
+                print(f"[Solver] Solved at iteration {i} ✔\n")
+                break
+
+            continue_prompt = f"""
+                Continue solving from the last step.
+
+                RULES:
+                - Do NOT repeat any step.
+                - Continue numbering exactly.
+                - Remember to follow the OUTPUT FORMAT strictly:
+                  Final Answer: <number>
+
+                QUESTION:
+                {question}
+
+                PARTIAL SOLUTION:
+                {full_solution}
+                """
+
+            continuation = self._call(continue_prompt, temperature=0.2)
+            print(f"[Continuation] Iter {i + 1} - Output:\n{continuation}\n")
+
+            # Append continuation
+            full_solution = full_solution.rstrip() + "\n" + continuation.strip()
+
+            # If solved after continuation, stop
+            if "Final Answer:" in continuation:
+                print(f"[Solver] Completed at iteration {i + 1} ✔\n")
+                break
+
+        # Get final answer
+        m_ans = re.search(r"Final Answer\s*:\s*(.+)", full_solution, re.IGNORECASE)
+        final_answer = m_ans.group(1).strip() if m_ans else ""
+
+        print(f"[Solver] Final Answer used: {final_answer}\n")
+        return final_answer
+
 
     # Refining CoT for better answer
     def self_refinement_coding(self, question):
@@ -310,3 +351,41 @@ class InferenceTechnique:
             """
         code = self._call(prompt, temperature=0.25)
         return code.strip()
+
+    # Analogical reasoning to solve planning problems
+    def reasoning_via_planning(self, question, max_steps=10):
+        response = self._call(
+            f"""
+            You are an expert logistics planner.
+            You must output a VALID PLAN that achieves the goal using ONLY the given actions.
+
+            Problem description:
+            {question}
+
+            Instructions:
+            - Generate a step-by-step plan using the actions provided.
+            - Each line should be one action in the format: (action actor object location)
+              example, (lift hoist0 crate0 pallet0 depot0)
+            - Make sure all preconditions and constraints are respected.
+            - DO NOT repeat actions uselessly.
+            - Do not skip steps, and do not include explanations.
+            - Do not exceed {max_steps} steps. Stop when the goal is achieved.
+
+            Output ONLY the plan, one action per line.
+            """,
+            temperature=0.7
+        )
+
+        # keep only lines with '(' and ')', strip extra spaces
+        plan_lines = []
+        for line in response.strip().splitlines():
+            line = line.strip()
+            if line.startswith('(') and line.endswith(')'):
+                plan_lines.append(line)
+
+        plan = "\n".join(plan_lines)
+
+        # print("[Reasoning-via-Planning] Generated plan:")
+        # print(plan)
+
+        return plan
