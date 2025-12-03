@@ -1,5 +1,3 @@
-from typing import Optional, Tuple
-
 from utils import call_model_chat_completions
 import re
 
@@ -37,7 +35,9 @@ class InferenceTechnique:
             QUESTION:
             {question}
         
+            DO NOT ANSWER THE QUESTION, ONLY CLASSIFY IT.
             Return ONLY one word, NO EXTRA CHARACTER: math, commonsense, future_prediction, coding, or planning.
+            
             """
 
         result = self._call(
@@ -80,13 +80,13 @@ class InferenceTechnique:
 
             answers.append(ans)
 
-        print("[Self-Consistency] Answers:", answers)
+        #print("[Self-Consistency] Answers:", answers)
 
         # Majority vote
         final_answer = max(set(answers), key=answers.count)
         confidence = answers.count(final_answer) / len(answers)
 
-        print(f"[Self-Consistency] Final = {final_answer} (confidence={confidence:.2f})")
+        #print(f"[Self-Consistency] Final = {final_answer} (confidence={confidence:.2f})")
 
         return final_answer
 
@@ -113,7 +113,7 @@ class InferenceTechnique:
 
             predictions.append(answer)
 
-        print("[Future-Prediction Probabilities] Raw predictions:", predictions)
+        # print("[Future-Prediction Probabilities] Raw predictions:", predictions)
 
         # Count frequencies
         from collections import Counter
@@ -121,7 +121,7 @@ class InferenceTechnique:
         most_common = count.most_common(1)[0][0]
         confidence = count[most_common] / len(predictions)
 
-        print(f"[Future-Prediction Probabilities] Selected = {most_common} (confidence={confidence:.2f})")
+        # print(f"[Future-Prediction Probabilities] Selected = {most_common} (confidence={confidence:.2f})")
 
         return most_common
 
@@ -143,15 +143,15 @@ class InferenceTechnique:
             f"Some examples of ACTIONS you can take are: Search[query], Calculate[equation], Lookup[topic].\n"
         )
 
-        print(f"[React] thought: {thought}\n")
-        print(f"[React] action: {action}\n")
+        #print(f"[React] thought: {thought}\n")
+        #print(f"[React] action: {action}\n")
 
         observation = self._call(
             f"Based on context from {action}.\n"
             f"for answering the QUESTION: {question}\n"
             f"Perform those ACTIONS."
             f"Then perform any observations or calculations needed. Avoid false facts.\n"
-            f"If direct action does not give enough info to answer, then a logical deduction must be done.\n"
+            f"If direct action does not give enough info to determine the answer, then a logical deduction must be done.\n"
             f"Do NOT give final answer yet.\n"
         )
 
@@ -166,18 +166,8 @@ class InferenceTechnique:
             f"Do not include chain-of-thought or steps."
         )
 
-        confirm_final = self._call(
-            f"Given question: {question}\n"
-            f"And your final answer: {final}."
-            f"Based on the previous THOUGHT: {thought}, ACTION: {action}, and OBSERVATION: {observation}, "
-            f" If it is unknown, you MUST give your most likely answer based on context around THOUGHT and {observation}."
-        )
-
-        print(f"[React] observation: {observation}\n")
-
-        print(f"[React] answer: {final}\n")
-
-        print("Confirmation of final answer:", confirm_final, "\n")
+        #print(f"[React] observation: {observation}\n")
+        #print(f"[React] answer: {final}\n")
 
         return final
 
@@ -225,8 +215,9 @@ class InferenceTechnique:
         print(f"[Solver] Initial output:\n{full_solution}\n")
 
 
+    # Refining CoT for better answer
     def self_refinement_coding(self, question):
-        answer = self.chain_of_thought(question)
+        answer = self.chain_of_thought_coding(question)
         print(f"[Self-Refinement] Initial Answer:\n{answer}\n")
 
         for i in range(2):
@@ -297,11 +288,8 @@ class InferenceTechnique:
         print(f"[Self-Refinement] Final Code Used:\n{answer}\n")
         return answer
 
-    # alternative method
-    def chain_of_thought(self, question: str) -> str:
-        """
-        Initial code generator for coding tasks only.
-        """
+    # CoT for coding problems
+    def chain_of_thought_coding(self, question: str) -> str:
         prompt = f"""
             You are a professional Python developer.
         
