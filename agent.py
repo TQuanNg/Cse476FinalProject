@@ -54,6 +54,7 @@ class WorkingAgent:
 
         return cot_answer
 
+    # future_prediction: use self-consistency as primary
     def solve_future_prediction_question(self, question):
         print("\n===[Domain Handler] Using Self-Consistency for FUTURE PREDICTION question===\n")
 
@@ -72,6 +73,7 @@ class WorkingAgent:
 
         return react_answer
 
+    # coding: use self-refinement as primary
     def solve_coding_question(self, question):
 
         print("[Domain Handler] Using Self-Refinement for CODING question")

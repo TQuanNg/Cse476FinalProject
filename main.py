@@ -1,3 +1,5 @@
+"""
+
 import json
 from utils import call_model_chat_completions, tests, MODEL, evaluate_tests_with_agent, self_evaluate_tests_with_agent
 from agent import WorkingAgent
@@ -41,3 +43,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+"""

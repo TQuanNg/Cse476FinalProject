@@ -46,54 +46,6 @@ class InferenceTechnique:
 
         return (result or "").strip().lower()
 
-    # Second technique: Self consistency
-    #
-    def self_consistency(self, question, samples=4):
-        answers = []
-
-        for i in range(samples):
-            response = self._call(
-                f"""
-                    {question}
-
-                    Solve carefully.
-                    End your response with:
-                    Final Answer: <your answer>
-                    """,
-                temperature=0.8
-            )
-
-            # Extract answer
-            if "Final Answer:" in response:
-                ans = response.split("Final Answer:")[-1].strip()
-                ans = ans.split("\n")[0].strip()
-            else:
-                # fallback if model forgets format
-                extract = self._call(
-
-                    f"""
-                    You must output ONLY ONE LINE:
-                    Final Answer: <number>
-
-                    Extract ONLY the final answer from this:\n\n{response}
-                    """,
-                    system="Return only the answer.",
-                    temperature=0.0
-                )
-                ans = extract.strip()
-
-            answers.append(ans)
-
-        # print("[Self-Consistency] Answers:", answers)
-
-        # Majority vote
-        final_answer = max(set(answers), key=answers.count)
-        confidence = answers.count(final_answer) / len(answers)
-
-        # print(f"[Self-Consistency] Final = {final_answer} (confidence={confidence:.2f})")
-
-        return final_answer
-
     def future_consistency(self, question, samples=4):
         predictions = []
 
@@ -123,8 +75,6 @@ class InferenceTechnique:
         from collections import Counter
         count = Counter(predictions)
         most_common = count.most_common(1)[0][0]
-        confidence = count[most_common] / len(predictions)
-
         # print(f"[Future-Prediction Probabilities] Selected = {most_common} (confidence={confidence:.2f})")
 
         return most_common
@@ -232,7 +182,7 @@ class InferenceTechnique:
                 - Do NOT repeat any step.
                 - Continue numbering exactly.
                 - Remember to follow the OUTPUT FORMAT strictly.
-                  Final Answer: <number>
+                  Final Answer: <number, or exponential expression, or square root, or fraction>
 
                 QUESTION:
                 {question}
@@ -260,6 +210,9 @@ class InferenceTechnique:
             Final Answer: <result>
 
             Using the partial work below.
+
+            QUESTION:
+            {question}
 
             PARTIAL SOLUTION:
             {full_solution}
@@ -290,7 +243,7 @@ class InferenceTechnique:
         Return ONLY the answer from the text below.
 
         RULES:
-        - Output ONLY the number or short text.
+        - Output ONLY the number, or exponential, or expression fraction, square root, or short text.
         - If the answer includes units, remove them.
         - If multiple numbers appear, return the FINAL answer only.
         - Do NOT explain.
