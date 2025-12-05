@@ -37,7 +37,7 @@ class WorkingAgent:
     # math: use self-refinement as primary, with optional self-consistency verification
     def solve_math_question(self, question):
 
-        print("\n===[Domain Handler] Using Self-Refinement for math question===\n")
+        print("\n===[Domain Handler] Using CoT and continuation prompting for math question===\n")
 
         if self.is_expression_task(question):
             return self.technique.solve_expression_question(question)

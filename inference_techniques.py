@@ -1,7 +1,6 @@
 from utils import call_model_chat_completions
 import re
 
-
 class InferenceTechnique:
     def __init__(self, inference_technique):
         self.call_counter = 0
@@ -192,7 +191,7 @@ class InferenceTechnique:
                 """
 
             continuation = self._call(continue_prompt, temperature=0.2)
-            print(f"[Continuation] Iter {i + 1} - Output:\n{continuation}\n")
+            #print(f"[Continuation] Iter {i + 1} - Output:\n{continuation}\n")
 
             # Append continuation
             full_solution = full_solution.rstrip() + "\n" + continuation.strip()
@@ -225,7 +224,7 @@ class InferenceTechnique:
             """
 
             forced = self._call(force_prompt, temperature=0.0)
-            print(f"[Solver] Forced Final Output:\n{forced}\n")
+            #print(f"[Solver] Forced Final Output:\n{forced}\n")
 
             full_solution = full_solution.rstrip() + "\n" + forced.strip()
 
@@ -316,7 +315,7 @@ class InferenceTechnique:
         NO explanation. NO bullets. ONE line only.
         """
             critique = self._call(verifier_prompt, temperature=0.0)
-            print(f"[Self-Refinement] Iteration {i + 1} - Critique:\n{critique}\n")
+            #print(f"[Self-Refinement] Iteration {i + 1} - Critique:\n{critique}\n")
 
             # Stop if correct
             if critique.strip().upper() == "VALID":
